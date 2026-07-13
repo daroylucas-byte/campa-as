@@ -3,7 +3,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 
-const COSTO_CREDITOS = 500;
+const COSTO_CREDITOS = 1500;
 const GEMINI_MODEL = "gemini-3.1-flash-image";
 
 // String.fromCharCode(...bytes) revienta el call stack con imágenes grandes (el spread

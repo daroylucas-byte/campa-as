@@ -83,7 +83,7 @@ export interface CampanaPost {
   id: string;
   campana_id: string;
   semana: number; // 1-4
-  fecha: string | null; // siempre NULL en v1
+  fecha: string | null; // calculada desde fecha_inicio + semana + día devuelto por la IA; NULL si no se pudo resolver el día
   plataforma: string;
   tipo_contenido: TipoContenidoPost;
   hora_sugerida: string;
@@ -93,6 +93,8 @@ export interface CampanaPost {
   hashtags: string[];
   objetivo_post: ObjetivoPost;
   imagen_url: string | null;
+  imagenes_urls?: string[] | null;
+  formato_imagen?: 'simple' | 'feed' | 'carrusel' | null;
   estado: EstadoPost;
   created_at: string;
 }
@@ -148,8 +150,12 @@ export interface GenerarSemanaCampanaOutput {
 export interface GenerarImagenCampanaInput {
   post_id: string;
   usuario_id?: string;
+  sugerencia_usuario?: string;
+  formato?: 'simple' | 'feed' | 'carrusel';
 }
 
 export interface GenerarImagenCampanaOutput {
   imagen_url: string;
+  imagenes_urls: string[];
+  formato: string;
 }

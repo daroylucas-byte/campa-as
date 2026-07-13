@@ -134,7 +134,7 @@ export async function eliminarPostsDeSemana(campanaId: string, semana: number) {
 
 /**
  * Genera el plan de pilares semanales de la campaña (Edge Function generar-campana).
- * Costo: 600 créditos.
+ * Costo: 1200 créditos.
  * Devuelve: { pilares, resumen }
  */
 export async function ejecutarGenerarCampana(campanaId: string, usuarioId?: string) {
@@ -147,7 +147,7 @@ export async function ejecutarGenerarCampana(campanaId: string, usuarioId?: stri
 
   if (error) {
     if (error.message?.includes('Saldo insuficiente')) {
-      throw new Error('Saldo insuficiente. Se requieren 600 créditos.');
+      throw new Error('Saldo insuficiente. Se requieren 1200 créditos.');
     }
     throw error;
   }
@@ -157,7 +157,7 @@ export async function ejecutarGenerarCampana(campanaId: string, usuarioId?: stri
 
 /**
  * Genera los posts de una semana específica (Edge Function generar-semana-campana).
- * Costo: 600 créditos.
+ * Costo: 1200 créditos.
  * Devuelve: { posts: [...] }
  * 
  * Regla de negocio:
@@ -176,7 +176,7 @@ export async function ejecutarGenerarSemanaCampana(campanaId: string, semana: nu
     // Si la llamada falla (ej: error 400 por posts existentes o falta de pilares),
     // propagamos el error para que la UI lo muestre tal cual.
     if (error.message?.includes('Saldo insuficiente')) {
-      throw new Error('Saldo insuficiente. Se requieren 600 créditos.');
+      throw new Error('Saldo insuficiente. Se requieren 1200 créditos.');
     }
     throw error;
   }
@@ -184,26 +184,28 @@ export async function ejecutarGenerarSemanaCampana(campanaId: string, semana: nu
   return data as { posts: CampanaPost[] };
 }
 
-/**
- * Genera la imagen para un post específico (Edge Function generar-imagen-campana).
- * Costo: 1250 créditos.
- * Devuelve: { imagen_url }
- */
-export async function ejecutarGenerarImagenCampana(postId: string, usuarioId?: string, sugerenciaUsuario?: string) {
+export async function ejecutarGenerarImagenCampana(
+  postId: string,
+  usuarioId?: string,
+  sugerenciaUsuario?: string,
+  formato?: 'simple' | 'feed' | 'carrusel'
+) {
   const { data, error } = await supabase.functions.invoke('generar-imagen-campana', {
     body: {
       post_id: postId,
       ...(usuarioId ? { usuario_id: usuarioId } : {}),
-      ...(sugerenciaUsuario ? { sugerencia_usuario: sugerenciaUsuario } : {})
+      ...(sugerenciaUsuario ? { sugerencia_usuario: sugerenciaUsuario } : {}),
+      ...(formato ? { formato } : {})
     }
   });
 
   if (error) {
     if (error.message?.includes('Saldo insuficiente')) {
-      throw new Error('Saldo insuficiente. Se requieren 1250 créditos.');
+      const costo = formato === 'carrusel' ? 5500 : (formato === 'feed' ? 3200 : 1300);
+      throw new Error(`Saldo insuficiente. Se requieren ${costo} créditos.`);
     }
     throw error;
   }
 
-  return data as { imagen_url: string };
+  return data as { imagen_url: string; imagenes_urls: string[]; formato: string };
 }

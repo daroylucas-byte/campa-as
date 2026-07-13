@@ -3,7 +3,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 
-const COSTO_CREDITOS = 600;
+const COSTO_CREDITOS = 1200;
 const GEMINI_MODEL = "gemini-2.5-flash";
 
 function limpiarJson(texto: string): string {

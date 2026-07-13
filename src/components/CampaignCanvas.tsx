@@ -43,6 +43,11 @@ export const CampaignCanvas: React.FC<CampaignCanvasProps> = ({
   // Sugerencias de texto libre para regenerar imágenes
   const [sugerenciasRegeneracion, setSugerenciasRegeneracion] = useState<Record<string, string>>({});
 
+  const [activeSlideIndices, setActiveSlideIndices] = useState<Record<string, number>>({});
+  const [activeDropdownPostId, setActiveDropdownPostId] = useState<string | null>(null);
+  const [progresoGeneracion, setProgresoGeneracion] = useState<Record<string, string>>({});
+  const [formatosSeleccionados, setFormatosSeleccionados] = useState<Record<string, 'simple' | 'feed' | 'carrusel'>>({});
+
   const cargarPosts = async () => {
     if (!campanaActiva) return;
     setLoadingPosts(true);
@@ -121,17 +126,67 @@ export const CampaignCanvas: React.FC<CampaignCanvasProps> = ({
   };
 
   // Generar la imagen para un post específico
-  const handleGenerarImagen = async (postId: string, sugerencia?: string) => {
+  const handleGenerarImagen = async (
+    postId: string, 
+    sugerencia?: string, 
+    formato: 'simple' | 'feed' | 'carrusel' = 'simple'
+  ) => {
     setImagenesGenerando(prev => ({ ...prev, [postId]: true }));
-    const toastId = toast.loading('Generando imagen artística con IA...');
+    
+    // Configurar y arrancar progreso dinámico
+    let seconds = 0;
+    const progressToastPrefix = formato === 'carrusel' 
+      ? 'Generando carrusel de 5 imágenes' 
+      : formato === 'feed' 
+      ? 'Generando feed de 3 imágenes' 
+      : 'Generando imagen';
+    
+    setProgresoGeneracion(prev => ({ ...prev, [postId]: 'Iniciando generación...' }));
+    const toastId = toast.loading(`${progressToastPrefix}...`);
+    
+    const interval = setInterval(() => {
+      seconds++;
+      let text = 'Generando...';
+      if (formato === 'simple') {
+        if (seconds < 3) text = 'Planificando escena...';
+        else if (seconds < 10) text = 'Generando imagen...';
+        else text = 'Finalizando...';
+      } else if (formato === 'feed') {
+        if (seconds < 4) text = 'Planificando guión de escenas...';
+        else if (seconds < 12) text = 'Generando imagen 1 de 3...';
+        else if (seconds < 20) text = 'Generando imagen 2 de 3...';
+        else if (seconds < 28) text = 'Generando imagen 3 de 3...';
+        else text = 'Finalizando...';
+      } else if (formato === 'carrusel') {
+        if (seconds < 5) text = 'Planificando guión narrativo...';
+        else if (seconds < 14) text = 'Generando imagen 1 de 5...';
+        else if (seconds < 23) text = 'Generando imagen 2 de 5...';
+        else if (seconds < 32) text = 'Generando imagen 3 de 5...';
+        else if (seconds < 41) text = 'Generando imagen 4 de 5...';
+        else if (seconds < 50) text = 'Generando imagen 5 de 5...';
+        else text = 'Finalizando...';
+      }
+      setProgresoGeneracion(prev => ({ ...prev, [postId]: text }));
+      toast.loading(`${progressToastPrefix} (${text})...`, { id: toastId });
+    }, 1000);
+
     try {
-      const res = await ejecutarGenerarImagenCampana(postId, user?.id, sugerencia);
-      toast.success('Imagen generada e incorporada', { id: toastId });
+      const res = await ejecutarGenerarImagenCampana(postId, user?.id, sugerencia, formato);
+      clearInterval(interval);
+      toast.success('Imágenes generadas e incorporadas', { id: toastId });
       
       await actualizarSaldo();
       
       // Actualizar lista local de posts con la URL de la imagen generada
-      setPosts(prev => prev.map(p => p.id === postId ? { ...p, imagen_url: res.imagen_url } : p));
+      setPosts(prev => prev.map(p => p.id === postId ? { 
+        ...p, 
+        imagen_url: res.imagen_url,
+        imagenes_urls: res.imagenes_urls,
+        formato_imagen: res.formato as 'simple' | 'feed' | 'carrusel'
+      } : p));
+
+      // Resetear índice de slide al primer elemento
+      setActiveSlideIndices(prev => ({ ...prev, [postId]: 0 }));
 
       // Limpiar la sugerencia de este post
       setSugerenciasRegeneracion(prev => {
@@ -140,11 +195,32 @@ export const CampaignCanvas: React.FC<CampaignCanvasProps> = ({
         return next;
       });
     } catch (err: any) {
+      clearInterval(interval);
       console.error(err);
       toast.error(err.message || 'Error al generar la imagen', { id: toastId });
     } finally {
+      clearInterval(interval);
       setImagenesGenerando(prev => ({ ...prev, [postId]: false }));
+      setProgresoGeneracion(prev => {
+        const next = { ...prev };
+        delete next[postId];
+        return next;
+      });
     }
+  };
+
+  const handleNextSlide = (postId: string, total: number) => {
+    setActiveSlideIndices(prev => ({
+      ...prev,
+      [postId]: (prev[postId] !== undefined ? prev[postId] + 1 : 1) % total
+    }));
+  };
+
+  const handlePrevSlide = (postId: string, total: number) => {
+    setActiveSlideIndices(prev => ({
+      ...prev,
+      [postId]: (prev[postId] !== undefined ? prev[postId] - 1 + total : total - 1) % total
+    }));
   };
 
   const handleDescargarImagen = async (url: string, filename: string) => {
@@ -332,7 +408,7 @@ export const CampaignCanvas: React.FC<CampaignCanvasProps> = ({
               <>
                 <span className="material-symbols-outlined text-lg">auto_awesome</span>
                 Generar Plan de Campaña
-                <span className="bg-white/20 px-2 py-0.5 rounded text-xs">-600 Cr</span>
+                <span className="bg-white/20 px-2 py-0.5 rounded text-xs">-1200 Cr</span>
               </>
             )}
           </button>
@@ -562,7 +638,7 @@ export const CampaignCanvas: React.FC<CampaignCanvasProps> = ({
                           <>
                             <span className="material-symbols-outlined">magic_button</span>
                             Generar Posts de esta Semana
-                            <span className="bg-white/20 px-2 py-0.5 rounded text-[10px] font-bold ml-1">-600 créditos</span>
+                            <span className="bg-white/20 px-2 py-0.5 rounded text-[10px] font-bold ml-1">-1200 créditos</span>
                           </>
                         )}
                       </button>
@@ -614,7 +690,28 @@ export const CampaignCanvas: React.FC<CampaignCanvasProps> = ({
                   <div className="overflow-x-auto pb-4">
                     <div className="grid grid-cols-7 gap-md min-w-[1150px]">
                       {["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"].map((diaNombre, idx) => {
-                        const postsDelDia = postsSemana.filter((_, postIndex) => postIndex % 7 === idx);
+                        // fecha_inicio es el día 1 real de la campaña (sea cual sea el día de la
+                        // semana calendario en que caiga), y "Lunes"/"Martes"/etc. es la posición
+                        // secuencial dentro de la semana (1º, 2º día...), no el día calendario real.
+                        // Por eso agrupamos por offset en días desde el inicio de ESA semana
+                        // ((semana-1)*7 días después de fecha_inicio), módulo 7 — no por getUTCDay().
+                        const postsConFecha = postsSemana.filter((p) => !!p.fecha);
+                        const postsDelDia = postsConFecha.length > 0
+                          ? postsSemana.filter((p) => {
+                              if (!p.fecha || !campanaActiva?.fecha_inicio) return false;
+                              const inicio = new Date(`${campanaActiva.fecha_inicio}T00:00:00Z`);
+                              const fechaPost = new Date(`${p.fecha}T00:00:00Z`);
+                              const diasDesdeInicio = Math.round(
+                                (fechaPost.getTime() - inicio.getTime()) / (1000 * 60 * 60 * 24)
+                              );
+                              return ((diasDesdeInicio % 7) + 7) % 7 === idx;
+                            })
+                          : postsSemana.filter((_, postIndex) => postIndex % 7 === idx);
+
+                        const primerPostConFecha = postsDelDia.find((p) => !!p.fecha);
+                        const numeroDia = primerPostConFecha?.fecha
+                          ? new Date(`${primerPostConFecha.fecha}T00:00:00Z`).getUTCDate()
+                          : idx + 1;
 
                         return (
                           <div key={idx} className="flex flex-col gap-sm">
@@ -624,7 +721,7 @@ export const CampaignCanvas: React.FC<CampaignCanvasProps> = ({
                                 {diaNombre.substring(0, 3)}
                               </span>
                               <span className="font-display text-headline-md text-primary mt-0.5">
-                                {idx + 1}
+                                {numeroDia}
                               </span>
                             </div>
 
@@ -716,6 +813,19 @@ export const CampaignCanvas: React.FC<CampaignCanvasProps> = ({
                       const diasSemana = ["Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado", "Domingo"];
                       const diaNombre = diasSemana[index % 7] || `Día ${index + 1}`;
 
+                      const hasImages = !!post.imagen_url;
+                      const imagesList = post.imagenes_urls && post.imagenes_urls.length > 0
+                        ? post.imagenes_urls
+                        : (post.imagen_url ? [post.imagen_url] : []);
+                      const activeSlideIdx = activeSlideIndices[post.id] || 0;
+                      const currentIdx = activeSlideIdx >= imagesList.length ? 0 : activeSlideIdx;
+                      const currentImage = imagesList[currentIdx] || '';
+                      // Si el usuario ya eligió un formato manualmente en esta sesión, respetarlo.
+                      // Si no, partir del formato que el post ya tiene generado (para que
+                      // "Regenerar" no vuelva silenciosamente a 'simple' en un post que es
+                      // feed/carrusel). Solo cae a 'simple' si el post no tiene nada generado aún.
+                      const selectedFormat = formatosSeleccionados[post.id] || post.formato_imagen || 'simple';
+
                       // Get icon based on platform
                       let platformIcon = "share";
                       let platformColor = "bg-primary/10 text-primary";
@@ -806,43 +916,150 @@ export const CampaignCanvas: React.FC<CampaignCanvasProps> = ({
 
                             {/* Image Preview Area */}
                             <div className="relative group">
-                              {post.imagen_url ? (
+                              {/* Loading Overlay */}
+                              {isGeneratingImg && (
+                                <div className="absolute inset-0 bg-surface-container-high/90 backdrop-blur-sm z-30 rounded-2xl flex flex-col items-center justify-center text-center p-md gap-xs">
+                                  <div className="w-12 h-12 rounded-full border-4 border-primary/20 border-t-primary animate-spin mb-sm"></div>
+                                  <span className="text-body-md font-semibold text-primary font-sans leading-tight">
+                                    {progresoGeneracion[post.id] || 'Generando imágenes...'}
+                                  </span>
+                                  <span className="text-body-xs text-on-surface-variant font-sans animate-pulse">
+                                    Esto puede tomar de 30 a 60 segundos
+                                  </span>
+                                </div>
+                              )}
+
+                              {hasImages && currentImage ? (
                                 <div className="relative w-full h-[320px] rounded-2xl overflow-hidden bg-surface-container-high border border-outline-variant">
+                                  {/* Carousel Format Badge */}
+                                  <div className="absolute top-3 left-3 z-20 bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-xl text-[10px] font-bold text-white uppercase tracking-wider flex items-center gap-1 border border-white/10 shadow-lg">
+                                    <span className="material-symbols-outlined text-[13px] text-tertiary">
+                                      {post.formato_imagen === 'carrusel' ? 'photo_library' : post.formato_imagen === 'feed' ? 'grid_view' : 'image'}
+                                    </span>
+                                    <span>{post.formato_imagen || 'simple'}</span>
+                                  </div>
+
+                                  {/* Active Image */}
                                   <img 
                                     className="w-full h-full object-cover" 
-                                    src={post.imagen_url} 
-                                    alt={post.hook} 
+                                    src={currentImage} 
+                                    alt={`${post.hook} - imagen ${currentIdx + 1}`} 
                                   />
-                                  <div className="absolute inset-0 bg-on-surface/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-md">
+
+                                  {/* Overlay Buttons */}
+                                  <div className="absolute inset-0 bg-on-surface/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-md z-10">
                                     <a 
-                                      href={post.imagen_url} 
+                                      href={currentImage} 
                                       target="_blank" 
                                       rel="noreferrer"
-                                      className="bg-white text-on-surface px-md py-2 rounded-full font-semibold text-body-sm flex items-center gap-1 hover:scale-105 transition-all"
+                                      className="bg-white text-on-surface px-md py-2 rounded-full font-semibold text-body-sm flex items-center gap-1 hover:scale-105 transition-all shadow-md"
                                     >
                                       <span className="material-symbols-outlined text-sm">visibility</span> Ver
                                     </a>
                                     <button 
-                                      onClick={() => handleDescargarImagen(post.imagen_url!, `${post.plataforma}-post-${post.id}.png`)}
-                                      className="bg-white text-on-surface px-md py-2 rounded-full font-semibold text-body-sm flex items-center gap-1 hover:scale-105 transition-all cursor-pointer"
+                                      onClick={() => handleDescargarImagen(currentImage, `${post.plataforma}-post-${post.id}-${currentIdx + 1}.png`)}
+                                      className="bg-white text-on-surface px-md py-2 rounded-full font-semibold text-body-sm flex items-center gap-1 hover:scale-105 transition-all cursor-pointer shadow-md"
                                     >
                                       <span className="material-symbols-outlined text-sm">download</span> Descargar
                                     </button>
                                   </div>
 
+                                  {/* Carousel Navigation Arrows */}
+                                  {imagesList.length > 1 && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => handlePrevSlide(post.id, imagesList.length)}
+                                        className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center transition-all z-20 cursor-pointer shadow-md"
+                                        title="Anterior"
+                                      >
+                                        <span className="material-symbols-outlined text-[18px]">chevron_left</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleNextSlide(post.id, imagesList.length)}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 text-white flex items-center justify-center transition-all z-20 cursor-pointer shadow-md"
+                                        title="Siguiente"
+                                      >
+                                        <span className="material-symbols-outlined text-[18px]">chevron_right</span>
+                                      </button>
+                                      
+                                      {/* Counter Indicator */}
+                                      <div className="absolute top-3 right-3 z-20 bg-black/70 backdrop-blur-md px-2.5 py-1 rounded-lg text-[10px] font-bold text-white tracking-widest border border-white/10 shadow-lg font-sans">
+                                        {currentIdx + 1} / {imagesList.length}
+                                      </div>
+
+                                      {/* Pagination dots */}
+                                      <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-20 flex gap-1.5 bg-black/40 backdrop-blur-sm py-1 px-2.5 rounded-full border border-white/5">
+                                        {imagesList.map((_, dotIdx) => (
+                                          <button
+                                            key={dotIdx}
+                                            onClick={() => setActiveSlideIndices(prev => ({ ...prev, [post.id]: dotIdx }))}
+                                            className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${
+                                              currentIdx === dotIdx ? 'bg-primary w-3' : 'bg-white/50 hover:bg-white/80'
+                                            }`}
+                                          />
+                                        ))}
+                                      </div>
+                                    </>
+                                  )}
+
                                   {/* Magic Button Overlay */}
-                                  <div className="absolute bottom-4 left-4 right-4 flex items-center gap-xs bg-black/60 backdrop-blur-md p-1.5 rounded-xl border border-white/10">
+                                  <div className="absolute bottom-4 left-4 right-4 flex items-center gap-xs bg-black/70 backdrop-blur-md p-1.5 rounded-xl border border-white/10 z-20 shadow-xl font-sans">
                                     <input 
                                       type="text"
                                       value={sugerenciasRegeneracion[post.id] || ''}
                                       onChange={(e) => setSugerenciasRegeneracion(prev => ({ ...prev, [post.id]: e.target.value }))}
-                                      placeholder="Sugerencia de regeneración (opcional): ej. sin texto..."
-                                      className="flex-1 bg-transparent text-white placeholder-white/50 text-[11px] px-2 py-1 focus:outline-none border-none font-sans"
+                                      placeholder="Sugerencia de regeneración (opcional)..."
+                                      className="flex-1 bg-transparent text-white placeholder-white/40 text-[11px] px-2.5 py-1 focus:outline-none border-none font-sans"
                                     />
+                                    
+                                    {/* Selector de Formato para regeneración */}
+                                    <div className="relative">
+                                      <button
+                                        type="button"
+                                        onClick={() => setActiveDropdownPostId(prev => prev === post.id ? null : post.id)}
+                                        className="w-8 h-8 bg-white/10 hover:bg-white/20 text-white rounded-lg flex items-center justify-center transition-all cursor-pointer"
+                                        title="Seleccionar formato de imagen"
+                                      >
+                                        <span className="material-symbols-outlined text-[16px] text-tertiary-container">
+                                          {selectedFormat === 'simple' ? 'image' : selectedFormat === 'feed' ? 'grid_view' : 'photo_library'}
+                                        </span>
+                                      </button>
+                                      
+                                      {activeDropdownPostId === post.id && (
+                                        <div className="absolute bottom-full right-0 mb-3 w-48 bg-surface-container rounded-xl shadow-2xl border border-outline-variant p-1 z-[99] flex flex-col gap-0.5 animate-fade-in text-on-surface">
+                                          <p className="text-[10px] text-on-surface-variant font-bold px-2 py-1 uppercase tracking-wider">Formato Regeneración</p>
+                                          {(['simple', 'feed', 'carrusel'] as const).map((fmt) => {
+                                            const isFmtSelected = selectedFormat === fmt;
+                                            const costStr = fmt === 'simple' ? '1300 Cr' : fmt === 'feed' ? '3200 Cr' : '5500 Cr';
+                                            const nameStr = fmt === 'simple' ? 'Simple (1 img)' : fmt === 'feed' ? 'Feed (3 img)' : 'Carrusel (5 img)';
+                                            
+                                            return (
+                                              <button
+                                                key={fmt}
+                                                type="button"
+                                                onClick={() => {
+                                                  setFormatosSeleccionados(prev => ({ ...prev, [post.id]: fmt }));
+                                                  setActiveDropdownPostId(null);
+                                                }}
+                                                className={`w-full text-left px-3 py-1.5 rounded-lg text-body-sm font-medium flex flex-col hover:bg-primary/10 transition-colors cursor-pointer ${
+                                                  isFmtSelected ? 'bg-primary/15 text-primary font-bold' : 'text-on-surface font-sans'
+                                                }`}
+                                              >
+                                                <span>{nameStr}</span>
+                                                <span className="text-[9px] opacity-75 font-normal font-sans">{costStr}</span>
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+
                                     <button 
-                                      onClick={() => handleGenerarImagen(post.id, sugerenciasRegeneracion[post.id])}
+                                      onClick={() => handleGenerarImagen(post.id, sugerenciasRegeneracion[post.id], selectedFormat)}
                                       disabled={isGeneratingImg}
-                                      className="w-8 h-8 bg-white/20 hover:bg-white/40 text-white rounded-lg flex items-center justify-center transition-all cursor-pointer disabled:opacity-50"
+                                      className="w-8 h-8 bg-white/20 hover:bg-white/30 text-white rounded-lg flex items-center justify-center transition-all cursor-pointer disabled:opacity-50"
                                       title="Regenerar Imagen IA"
                                     >
                                       <span className={`material-symbols-outlined text-[16px] ${isGeneratingImg ? 'animate-spin' : ''}`}>edit_square</span>
@@ -850,29 +1067,46 @@ export const CampaignCanvas: React.FC<CampaignCanvasProps> = ({
                                   </div>
                                 </div>
                               ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => handleGenerarImagen(post.id)}
-                                  disabled={isGeneratingImg}
-                                  className={`w-full h-[320px] border border-dashed border-outline-variant hover:bg-surface-container-low rounded-2xl flex flex-col items-center justify-center text-center p-md gap-sm cursor-pointer active:scale-95 transition-all ${
-                                    isGeneratingImg ? 'bg-primary/5 border-primary/30 animate-pulse' : ''
-                                  }`}
-                                >
-                                  {isGeneratingImg ? (
-                                    <>
-                                      <span className="material-symbols-outlined text-4xl text-primary animate-spin">refresh</span>
-                                      <span className="text-body-md font-semibold text-primary font-sans">Generando Imagen...</span>
-                                    </>
-                                  ) : (
-                                    <>
-                                      <span className="material-symbols-outlined text-4xl text-primary-container">image</span>
-                                      <span className="text-body-md font-semibold text-on-surface font-sans">Generar Imagen IA</span>
-                                      <span className="text-body-sm bg-primary/10 text-primary border border-primary/20 px-3 py-1 rounded-full font-sans">
-                                        -1250 Créditos
-                                      </span>
-                                    </>
-                                  )}
-                                </button>
+                                <div className="flex flex-col gap-sm w-full font-sans">
+                                  {/* Selection Interface for Format */}
+                                  <div className="flex p-1 bg-surface-container-high rounded-xl border border-outline-variant/60">
+                                    {(['simple', 'feed', 'carrusel'] as const).map((fmt) => {
+                                      const label = fmt === 'simple' ? 'Simple' : fmt === 'feed' ? 'Feed' : 'Carrusel';
+                                      const cost = fmt === 'simple' ? '1.3k' : fmt === 'feed' ? '3.2k' : '5.5k';
+                                      const isSelected = selectedFormat === fmt;
+                                      return (
+                                        <button
+                                          key={fmt}
+                                          type="button"
+                                          onClick={() => setFormatosSeleccionados(prev => ({ ...prev, [post.id]: fmt }))}
+                                          disabled={isGeneratingImg}
+                                          className={`flex-1 py-1.5 rounded-lg text-[11px] font-semibold transition-all duration-200 cursor-pointer text-center ${
+                                            isSelected
+                                              ? 'bg-primary text-white shadow-sm font-bold'
+                                              : 'text-on-surface-variant hover:text-on-surface'
+                                          }`}
+                                        >
+                                          {label} <span className="opacity-75 font-normal">({cost})</span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleGenerarImagen(post.id, undefined, selectedFormat)}
+                                    disabled={isGeneratingImg}
+                                    className={`w-full h-[260px] border border-dashed border-outline-variant hover:bg-surface-container-low rounded-2xl flex flex-col items-center justify-center text-center p-md gap-sm cursor-pointer active:scale-95 transition-all ${
+                                      isGeneratingImg ? 'bg-primary/5 border-primary/30 animate-pulse' : ''
+                                    }`}
+                                  >
+                                    <span className="material-symbols-outlined text-4xl text-primary-container">image</span>
+                                    <span className="text-body-md font-semibold text-on-surface font-sans">Generar Imagen IA</span>
+                                    <span className="text-body-sm bg-primary/10 text-primary border border-primary/20 px-3 py-1 rounded-full font-sans">
+                                      -{selectedFormat === 'simple' ? '1300' : selectedFormat === 'feed' ? '3200' : '5500'} Créditos
+                                    </span>
+                                  </button>
+                                </div>
                               )}
                             </div>
                           </div>
@@ -881,30 +1115,30 @@ export const CampaignCanvas: React.FC<CampaignCanvasProps> = ({
                           <div className="mt-lg pt-md border-t border-outline-variant flex flex-wrap justify-end gap-sm">
                             <button
                               onClick={() => handleOpenEditModal(post)}
-                              className="px-md py-2 rounded-xl border border-outline text-on-surface font-semibold text-body-sm flex items-center gap-1 hover:bg-surface-container-high transition-all active:scale-95 cursor-pointer"
+                              className="px-md py-2 rounded-xl border border-outline text-on-surface font-semibold text-body-sm flex items-center gap-1 hover:bg-surface-container-high transition-all active:scale-95 cursor-pointer font-sans"
                             >
-                              <span className="material-symbols-outlined text-sm">edit</span> Editar
+                              <span className="material-symbols-outlined text-sm font-sans">edit</span> Editar
                             </button>
                             {post.estado === 'pendiente' ? (
                               <>
                                 <button
                                   onClick={() => handleCambiarEstadoPost(post.id, 'rechazada')}
-                                  className="px-md py-2 rounded-xl border border-error text-error font-semibold text-body-sm flex items-center gap-1 hover:bg-error-container/20 transition-all active:scale-95 cursor-pointer"
+                                  className="px-md py-2 rounded-xl border border-error text-error font-semibold text-body-sm flex items-center gap-1 hover:bg-error-container/20 transition-all active:scale-95 cursor-pointer font-sans"
                                 >
                                   <span className="material-symbols-outlined">close</span> Rechazar
                                 </button>
                                 {!post.imagen_url && (
                                   <button
-                                    onClick={() => handleGenerarImagen(post.id)}
+                                    onClick={() => handleGenerarImagen(post.id, undefined, selectedFormat)}
                                     disabled={isGeneratingImg}
-                                    className="px-md py-2 rounded-xl bg-tertiary-container hover:bg-tertiary-container/80 text-white font-semibold text-body-sm flex items-center gap-1 hover:shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-50"
+                                    className="px-md py-2 rounded-xl bg-tertiary-container hover:bg-tertiary-container/80 text-white font-semibold text-body-sm flex items-center gap-1 hover:shadow-md transition-all active:scale-95 cursor-pointer disabled:opacity-50 font-sans"
                                   >
                                     <span className="material-symbols-outlined">auto_awesome</span> Generar Imagen
                                   </button>
                                 )}
                                 <button
                                   onClick={() => handleCambiarEstadoPost(post.id, 'aprobada')}
-                                  className="px-lg py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold text-body-sm flex items-center gap-1 transition-all active:scale-95 shadow-lg cursor-pointer"
+                                  className="px-lg py-2 rounded-xl bg-green-600 hover:bg-green-700 text-white font-semibold text-body-sm flex items-center gap-1 transition-all active:scale-95 shadow-lg cursor-pointer font-sans"
                                 >
                                   <span className="material-symbols-outlined">check_circle</span> Aprobar
                                 </button>

@@ -3,11 +3,42 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { corsHeaders } from "../_shared/cors.ts";
 
-const COSTO_CREDITOS = 600;
+const COSTO_CREDITOS = 1200;
 const GEMINI_MODEL = "gemini-2.5-flash";
 
 function limpiarJson(texto: string): string {
   return texto.replace(/```json\s*/gi, "").replace(/```\s*$/g, "").trim();
+}
+
+const ORDEN_DIAS: Record<string, number> = {
+  lunes: 0,
+  martes: 1,
+  "miércoles": 2,
+  miercoles: 2,
+  jueves: 3,
+  viernes: 4,
+  "sábado": 5,
+  sabado: 5,
+  domingo: 6,
+};
+
+// Calcula la fecha calendario real de un post a partir de fecha_inicio de la campaña,
+// la semana (1-4) y el día de texto que devuelve la IA ("Lunes", "Martes", ...).
+// fecha_inicio es siempre el día 1 real de la campaña, sea cual sea el día de la semana
+// calendario en que caiga — el "Lunes"/"Martes"/etc. de la IA se interpreta como posición
+// secuencial dentro de la semana (1º, 2º, 3º día...), NO como nombre de día calendario real.
+// Por eso no se busca "el próximo lunes": el offset se suma directo sobre fecha_inicio.
+function calcularFechaPost(fechaInicio: string | null, semana: number, dia?: string): string | null {
+  if (!fechaInicio || !dia) return null;
+
+  const offsetDia = ORDEN_DIAS[dia.trim().toLowerCase()];
+  if (offsetDia === undefined) return null;
+
+  const base = new Date(`${fechaInicio}T00:00:00Z`);
+  const diasTotales = (semana - 1) * 7 + offsetDia;
+  base.setUTCDate(base.getUTCDate() + diasTotales);
+
+  return base.toISOString().slice(0, 10); // YYYY-MM-DD
 }
 
 Deno.serve(async (req) => {
@@ -148,7 +179,7 @@ esta forma exacta por cada post:
     const filas = posts.map((p) => ({
       campana_id,
       semana,
-      fecha: null,
+      fecha: calcularFechaPost(campana.fecha_inicio, semana, p.dia as string | undefined),
       plataforma: p.plataforma,
       tipo_contenido: p.tipo_contenido,
       hora_sugerida: p.hora_sugerida,

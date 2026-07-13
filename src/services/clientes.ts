@@ -167,7 +167,7 @@ export async function obtenerAnalisisIdentidad(clienteId: string) {
 
 /**
  * Llama a la Edge Function 'analizar-identidad-cliente' para analizar las imágenes del cliente.
- * Costo: 500 créditos.
+ * Costo: 1500 créditos.
  */
 export async function ejecutarAnalizarIdentidad(clienteId: string, usuarioId?: string) {
   const { data, error } = await supabase.functions.invoke('analizar-identidad-cliente', {
@@ -180,7 +180,7 @@ export async function ejecutarAnalizarIdentidad(clienteId: string, usuarioId?: s
   if (error) {
     // Manejo personalizado de errores comunes
     if (error.message?.includes('Saldo insuficiente')) {
-      throw new Error('Saldo insuficiente. Se requieren 500 créditos.');
+      throw new Error('Saldo insuficiente. Se requieren 1500 créditos.');
     }
     throw error;
   }

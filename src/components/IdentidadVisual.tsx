@@ -329,7 +329,7 @@ export const IdentidadVisual: React.FC = () => {
             <span className="material-symbols-outlined text-sm">auto_awesome</span>
             Analizar Identidad
             <span className="ml-1 px-1.5 py-0.5 bg-white/20 rounded text-[10px] font-bold">
-              -500 Cr
+              -1500 Cr
             </span>
           </>
         )}
